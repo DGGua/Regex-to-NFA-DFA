@@ -1,7 +1,8 @@
 # %% [markdown]
 # # lexer
-# * input: a string
-# * output: a list of tokens
+import re
+# * 输入: 一个字符串
+# * 输出: 一个标记列表
 
 # %%
 from enum import Enum,auto
@@ -16,55 +17,106 @@ class TokenType(Enum):
   CLOSED_SQUARE_BRACKET = auto()
   DASH = auto()
   LITERAL = auto()
-def getTypeToken(token):
-    if token == '|':
-        return TokenType.OR
-    elif token == '*':
-        return TokenType.STAR
-    elif token == '+':
-        return TokenType.PLUS
-    elif token == '?':
-        return TokenType.QUESTION_MARK
-    elif token == '(':
-        return TokenType.OPEN_PAREN
-    elif token == ')':
-        return TokenType.CLOSED_PAREN
-    elif token == '[':
-        return TokenType.OPEN_SQUARE_BRACKET
-    elif token == ']':
-        return TokenType.CLOSED_SQUARE_BRACKET
-    elif token == '-':
-        return TokenType.DASH
-    else:
-        return TokenType.LITERAL
-def getTokenValue(token):
-    if token==TokenType.OR:
-        return '|'
-    elif token==TokenType.STAR:
-        return '*'
-    elif token==TokenType.PLUS:
-        return '+'
-    elif token==TokenType.QUESTION_MARK:
-        return '?'
-    elif token==TokenType.OPEN_PAREN:
-        return '('
-    elif token==TokenType.CLOSED_PAREN:
-        return ')'
-    elif token==TokenType.OPEN_SQUARE_BRACKET:
-        return '['
-    elif token==TokenType.CLOSED_SQUARE_BRACKET:
-        return ']'
-    elif token==TokenType.DASH:
-        return '-'
-    else:
-        return token
+  WORD = auto()
+  DIGIT = auto()
+  SPACE = auto()
+  NOTWORD = auto()
+  NOTDIGIT = auto()
+  NOTSPACE = auto()
+  
 
 class Token:
     ttype: TokenType
     content: str
-    def __init__(self, ttype, content):
+    def __init__(self, ttype, content:int = -1):
+        
         self.ttype = ttype
         self.content = content
+    def __repr__(self) -> str:
+        return f"Token({self.ttype=}, {self.content=})"
+        
+def getNextToken(string: str, tokenStream:list[Token]) -> tuple[list[Token], int]:
+    token = string[0]
+    nextoffset = 1
+    returnTokens = []
+    if token == '|':
+        returnTokens.append(Token(TokenType.OR, -1))
+    elif token == '*':
+        returnTokens.append(Token(TokenType.STAR, -1))
+    elif token == '+':
+        returnTokens.append(Token(TokenType.PLUS, -1))
+    elif token == '?':
+        returnTokens.append(Token(TokenType.QUESTION_MARK, -1))
+    elif token == '(':
+        returnTokens.append(Token(TokenType.OPEN_PAREN, -1))
+    elif token == ')':
+        returnTokens.append(Token(TokenType.CLOSED_PAREN, -1))
+    elif token == '[':
+        returnTokens.append(Token(TokenType.OPEN_SQUARE_BRACKET, -1))
+    elif token == ']':
+        returnTokens.append(Token(TokenType.CLOSED_SQUARE_BRACKET, -1))
+    elif token == '-':
+        returnTokens.append(Token(TokenType.DASH, -1))
+    elif token == '\\':
+        char = string[1]    
+        nextoffset = 2
+        if char in ["+", "*", "?", "^", "$", "\\", "." , "[", "]", "{", "}", "(", ")", "|", "/"]:
+            #  get ascii code 
+            returnTokens.append(Token(TokenType.LITERAL, ord(char)))
+        elif char == "0":
+            returnTokens.append(Token(TokenType.LITERAL, int(string[2:4], base=8)))
+            nextoffset = 4
+        elif char == "x":
+            returnTokens.append(Token(TokenType.LITERAL, int(string[2:4], base=16)))
+            nextoffset = 4
+        elif char == "u":
+            if string[2] == "{":
+                end_index = string.find("}")
+                assert end_index != -1, "Invalid unicode escape sequence"
+                assert (end_index - 3) % 2 == 0, "Invalid unicode escape sequence"
+                for i in range(3, end_index, 2):
+                    returnTokens.append(Token(TokenType.LITERAL, int(string[i:i+2], base=16)))
+                nextoffset = end_index + 1                    
+            else:
+                returnTokens.append(Token(TokenType.LITERAL, int(string[2:4], base=16)))
+                returnTokens.append(Token(TokenType.LITERAL, int(string[4:6], base=16)))
+                nextoffset = 6
+        elif char == "c":
+            assert  not (ord("A") <= ord(string[2]) <= ord("Z") or ord("a") <= ord(string[2]) <= ord("z")), "Invalid control character"
+            if ord(string[2]) < "a":
+                returnTokens.append(Token(TokenType.LITERAL, ord(string[2]) - ord("A") + 1))
+            else: 
+                returnTokens.append(Token(TokenType.LITERAL, ord(string[2]) - ord("a") + 1))
+        elif char == "t":
+            returnTokens.append(Token(TokenType.LITERAL, ord("\t")))
+        elif char == "n":
+            returnTokens.append(Token(TokenType.LITERAL, ord("\n")))
+        elif char == "v":
+            returnTokens.append(Token(TokenType.LITERAL, ord("\v")))
+        elif char == "r":
+            returnTokens.append(Token(TokenType.LITERAL, ord("\r")))
+        elif char == "f":
+            returnTokens.append(Token(TokenType.LITERAL, ord("\f")))
+        elif char == "0":
+            returnTokens.append(Token(TokenType.LITERAL, ord("\0")))
+        elif char == "w":
+            returnTokens.append(Token(TokenType.WORD))
+        elif char == "d":
+            returnTokens.append(Token(TokenType.DIGIT))
+        elif char == "s":
+            returnTokens.append(Token(TokenType.SPACE))
+        elif char == "W":
+            returnTokens.append(Token(TokenType.NOTWORD))
+        elif char == "D":
+            returnTokens.append(Token(TokenType.NOTDIGIT))
+        elif char == "S":
+            returnTokens.append(Token(TokenType.NOTSPACE))
+        else:
+            raise ValueError("Invalid escape sequence")
+        
+    else:
+        returnTokens.append(Token(TokenType.LITERAL, ord(token)))
+    return returnTokens, nextoffset
 
 # %%
 class regexLexer:
@@ -74,9 +126,15 @@ class regexLexer:
         self.regexStr = regexStr
     def lexer(self):
         tokenStream = []
-        for i in range(len(self.regexStr)):
-            token = Token(getTypeToken(self.regexStr[i]), self.regexStr[i])
-            tokenStream.append(token)
+        next_token_index = 0
+        while next_token_index < len(self.regexStr):
+            tokens, next_token_offset = getNextToken(self.regexStr[next_token_index:], tokenStream)
+            next_token_index += next_token_offset
+            tokenStream += tokens
+            # print(next_token_index, next_token_offset)
+        # for i in range(len(self.regexStr)):
+        #     token = Token(getTypeToken(self.regexStr[i]), self.regexStr[i])
+        #     tokenStream.append(token)
         return tokenStream
     
 # regexLexer = regexLexer('a|b')
@@ -87,8 +145,8 @@ class regexLexer:
 
 # %% [markdown]
 # # parser
-# * input: a list of tokens
-# * output: a list of AST nodes
+# * 输入: 一个标记列表
+# * 输出: 一个 AST 节点列表
 
 # %%
 from abc import ABC, abstractmethod
@@ -97,6 +155,10 @@ class AstNode(ABC):
     @abstractmethod
     def __init__(self):
         pass
+
+class QuantativeAstNode(AstNode):
+    def __init__(self):
+        self.lazy = False
 
 class OrAstNode(AstNode):
     def __init__(self, left, right):
@@ -107,11 +169,13 @@ class SeqAstNode(AstNode):
     def __init__(self, left, right):
         self.left = left
         self.right = right
-class StarAstNode(AstNode):
+class StarAstNode(QuantativeAstNode):
     def __init__(self, left):
+        super().__init__()
         self.left = left
-class PlusAstNode(AstNode):
+class PlusAstNode(QuantativeAstNode):
     def __init__(self, left):
+        super().__init__()
         self.left = left
 class QuestionMarkAstNode(AstNode):
     def __init__(self, left):
@@ -136,16 +200,16 @@ def print_ast(node, indent=0):
         print_ast(node.left, indent + 2)
         print_ast(node.right, indent + 2)
     elif isinstance(node, StarAstNode):
-        print(' ' * indent + 'STAR')
+        print(' ' * indent + ('LAZY' if node.lazy else '')  + 'STAR')
         print_ast(node.left, indent + 2)
     elif isinstance(node, PlusAstNode):
-        print(' ' * indent + 'PLUS')
+        print(' ' * indent + ('LAZY' if node.lazy else '') +  'PLUS')
         print_ast(node.left, indent + 2)
     elif isinstance(node, QuestionMarkAstNode):
         print(' ' * indent + 'QUESTION_MARK')
         print_ast(node.left, indent + 2)
     elif isinstance(node, LiteralCharacterAstNode):
-        print(' ' * indent + 'LITERAL: ' + node.char)
+        print(' ' * indent + 'LITERAL: ' + str(node.char))
     elif isinstance(node, SquareBracketAstNode):
         print(' ' * indent + 'SQUARE_BRACKET')
         for char in node.clas:
@@ -217,12 +281,19 @@ class ParseRegex:
             ast = SquareBracketAstNode(clas)
         else:
             ast = AstNode()
+        quantative_token_hit = False
         if self.match(TokenType.STAR):
             ast = StarAstNode(ast)
+            quantative_token_hit = True
         elif self.match(TokenType.PLUS):
             ast = PlusAstNode(ast)
+            quantative_token_hit = True
         elif self.match(TokenType.QUESTION_MARK):
             ast = QuestionMarkAstNode(ast)
+        if self.match(TokenType.QUESTION_MARK):
+            assert quantative_token_hit, "Quantative token not hit"
+            ast.lazy = True
+            
         return ast
 
     def parse_L(self):
@@ -268,8 +339,8 @@ class ParseRegex:
 
 # %% [markdown]
 # # AST to NFA
-# * input: a list of AST nodes
-# * output: a NFA 
+# * 输入: 一个 AST 节点列表
+# * 输出: 一个 NFA 
 
 # %%
 from collections import deque
@@ -440,7 +511,7 @@ def draw_nfa(nfa):
                 sy = symbol
                 if symbol == 'epsilon':
                     sy = 'ε'
-                dot.edge(key, next_state, label=sy)
+                dot.edge(key, next_state, label=str(sy))
     dot.edge('startingStateH',nfa['startingState'])
 
     return dot
@@ -466,7 +537,7 @@ def draw_dfa(dfa):
             if symbol == 'isTerminatingState':
                 continue
             next_state= dfa[key][symbol]   
-            dot.edge(key, next_state, label=symbol)
+            dot.edge(key, next_state, label=str(symbol))
     dot.edge('startingStateH',dfa['startingState'])
 
     return dot
@@ -479,26 +550,23 @@ def save_json(nfa, filename):
     with open(filename, "w") as outfile:
         outfile.write(json_object)
 
-def display_and_save_image(nfa,fileName):
+def display_and_save_image(nfa, fileName):
     if fileName == 'nfa_graph':
         dot = draw_nfa(nfa)
     else:
-        dot=draw_dfa(nfa)
+        dot = draw_dfa(nfa)
     dot.format = 'png'
     dot.render(fileName)
-    #svg = SVG(data=dot.pipe())._repr_svg_()
-    # display nfa_graph.png
-    
-    img=mpimg.imread(fileName+'.png')
-    imgplot = plt.imshow(img)
+    img = mpimg.imread(fileName + '.png')
+    plt.imshow(img)
     plt.axis('off')
-    plt.figure(figsize=(15, 15))
-    plt.show()
+    plt.savefig(fileName + '.png', dpi=300)  # 保存高清图片
+    plt.close()  # 关闭图像
 
 
 
 # %% [markdown]
-# # Test req1
+# # 测试需求1
 
 # %%
 import re
@@ -518,14 +586,7 @@ def req1(regex):
     parseRegex = ParseRegex(tokenStream)
     ## handle Exception
     throwException = False
-    try:
-        AST = parseRegex.parse()
-    except Exception as e:
-        print(e)
-        throwException = True
-    if throwException:
-        print('Invalid regex')
-        return
+    AST = parseRegex.parse()
     print_ast(AST)
     nfa = ThompsonConstruction(AST).construct().to_dict()
     save_json(nfa, "nfa.json")
@@ -637,7 +698,7 @@ class NFAtoDFAConverter:
 
 
 # %% [markdown]
-# # Minimized DFA
+# # 最小化 DFA
 
 # %%
 class DFAMinimizer:
@@ -769,7 +830,7 @@ def req2(regex):
 
 
 # %% [markdown]
-# # Run
+# # 运行
 
 # %%
 # test complex regex
@@ -791,7 +852,7 @@ regexTest14 = '(a{3,2})'
 regexTestBouns1='((((AB)|[A-Z])+)([A-Z]*))'
 regexTestBouns2='(((((ABE)|C)|((([A-Z])S)*))+)((AB)C))'
 regexTestBouns3='((([a-z_])(([a-z0-9_])*))(([!?])?))'
-regex = 'ab(b|c)*d+'
+regex = r'ab\n(ab|c)*d+?'
 # check if regex is valid
 if not is_valid_regex(regex):
     print('invalid regex compilation failed')
@@ -799,16 +860,5 @@ else:
     req1(regex)
     req2(regex)
 
-
-# %%
-from automata.fa.dfa import DFA
-from automata.fa.nfa import NFA
-
-nfa = NFA.from_regex(r"(()()(()))")
-dfa = DFA.from_nfa(nfa)
-dfa = dfa.minify()
-dfa.show_diagram()
-
-# NFA.from_regex(r"123").show_diagram()
 
 
